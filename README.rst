@@ -14,11 +14,15 @@ There are two ways to use this library, overwrite the default TheadPoolExecutor 
 
 To overwrite the default, do this as the first thing before any other thing your project does.
 
+.. code-block:: python
+
     from timeoutthreadpoolexecutor import TimeoutThreadPoolExecutor
     from concurrent.futures import thread
     thread.ThreadPoolExecutor = TimeoutThreadPoolExecutor
 
 or
+
+.. code-block:: python
 
     from timeoutthreadpoolexecutor import TimeoutThreadPoolExecutor as ThreadPoolExecutor
 
