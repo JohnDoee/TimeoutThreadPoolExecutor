@@ -132,6 +132,15 @@ def _worker(executor_reference, expiration_time, work_queue, initializer, initar
         _base.LOGGER.critical('Exception in worker', exc_info=True)
 
 
+if not hasattr(_base, "BrokenExecutor"):
+    class BrokenExecutor(RuntimeError):
+        """
+        Raised when a executor has become non-functional after a severe failure.
+        """
+
+    setattr(_base, "BrokenExecutor", BrokenExecutor)
+
+
 class BrokenThreadPool(_base.BrokenExecutor):
     """
     Raised when a worker thread in a ThreadPoolExecutor failed initializing.

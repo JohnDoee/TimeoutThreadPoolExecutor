@@ -8,7 +8,7 @@ with open(readme_path) as fp:
 
 setup(
     name='timeoutthreadpoolexecutor',
-    version='1.0.0',
+    version='1.0.1',
     url='https://github.com/JohnDoee/timeoutthreadpoolexecutor',
     author='Anders Jensen',
     author_email='andersandjensen@gmail.com',
