@@ -85,13 +85,11 @@ def _worker(executor_reference, expiration_time, work_queue, initializer, initar
                 if time.monotonic() >= expiration_time:
                     executor = executor_reference()
                     if executor is not None:
-                        # Not sure if this is correct when worker has not executed
-                        # anything yet.
-                        # Part of the whole logic and shortcut here changes when
-                        # threads can die
                         executor._idle_semaphore.acquire(timeout=0)
-                        with executor._shutdown_lock:
-                            executor._threads.discard(threading.current_thread())
+                        t = threading.current_thread()
+                        with executor._shutdown_lock, _global_shutdown_lock:
+                            executor._threads.remove(t)
+                            del _threads_queues[t]
                         del executor
                     return
                 continue
@@ -105,8 +103,11 @@ def _worker(executor_reference, expiration_time, work_queue, initializer, initar
                 executor = executor_reference()
                 if executor is not None:
                     if time.monotonic() >= expiration_time:
-                        with executor._shutdown_lock:
-                            executor._threads.discard(threading.current_thread())
+                        executor._idle_semaphore.acquire(timeout=0)
+                        t = threading.current_thread()
+                        with executor._shutdown_lock, _global_shutdown_lock:
+                            executor._threads.remove(t)
+                            del _threads_queues[t]
                         del executor
                         return
                     else:
@@ -189,6 +190,7 @@ class TimeoutThreadPoolExecutor(thread.ThreadPoolExecutor):
         self._initializer = initializer
         self._initargs = initargs
         self._max_ttl = max_ttl
+        self._thread_alive_check = time.monotonic()
 
     def submit(*args, **kwargs):
         if len(args) >= 2:
@@ -225,6 +227,15 @@ class TimeoutThreadPoolExecutor(thread.ThreadPoolExecutor):
     submit.__doc__ = _base.Executor.submit.__doc__
 
     def _adjust_thread_count(self):
+        if time.monotonic() - self._thread_alive_check > 30:
+            to_remove = [t for t in self._threads if not t.is_alive()]
+            for t in to_remove:
+                _base.LOGGER.warning("Removing stale thread %r" % (t, ))
+                self._idle_semaphore.acquire(timeout=0)
+                self._threads.remove(t)
+                del _threads_queues[t]
+            self._thread_alive_check = time.monotonic()
+
         # if idle threads are available, don't spin new threads
         if self._idle_semaphore.acquire(timeout=0):
             return

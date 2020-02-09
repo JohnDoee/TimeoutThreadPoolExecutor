@@ -8,7 +8,7 @@ with open(readme_path) as fp:
 
 setup(
     name='timeoutthreadpoolexecutor',
-    version='1.0.1',
+    version='1.0.2',
     url='https://github.com/JohnDoee/timeoutthreadpoolexecutor',
     author='Anders Jensen',
     author_email='andersandjensen@gmail.com',
@@ -24,7 +24,6 @@ setup(
         'Operating System :: OS Independent',
         'Programming Language :: Python',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
         'Topic :: Software Development :: Libraries :: Python Modules',
