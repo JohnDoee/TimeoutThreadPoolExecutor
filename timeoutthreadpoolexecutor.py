@@ -85,11 +85,11 @@ def _worker(executor_reference, expiration_time, work_queue, initializer, initar
                 if time.monotonic() >= expiration_time:
                     executor = executor_reference()
                     if executor is not None:
-                        executor._idle_semaphore.acquire(timeout=0)
                         t = threading.current_thread()
                         with executor._shutdown_lock, _global_shutdown_lock:
                             executor._threads.remove(t)
                             del _threads_queues[t]
+                            executor._adjust_thread_count()
                         del executor
                     return
                 continue
@@ -103,15 +103,18 @@ def _worker(executor_reference, expiration_time, work_queue, initializer, initar
                 executor = executor_reference()
                 if executor is not None:
                     if time.monotonic() >= expiration_time:
-                        executor._idle_semaphore.acquire(timeout=0)
                         t = threading.current_thread()
                         with executor._shutdown_lock, _global_shutdown_lock:
+                            with executor._job_counter_lock:
+                                executor._job_counter -= 1
                             executor._threads.remove(t)
                             del _threads_queues[t]
+                            executor._adjust_thread_count()
                         del executor
                         return
                     else:
-                        executor._idle_semaphore.release()
+                        with executor._job_counter_lock:
+                            executor._job_counter -= 1
                         del executor
                 continue
 
@@ -180,7 +183,8 @@ class TimeoutThreadPoolExecutor(thread.ThreadPoolExecutor):
 
         self._max_workers = max_workers
         self._work_queue = queue.SimpleQueue()
-        self._idle_semaphore = threading.Semaphore(0)
+        self._job_counter = 0
+        self._job_counter_lock = threading.Lock()
         self._threads = set()
         self._broken = False
         self._shutdown = False
@@ -222,31 +226,24 @@ class TimeoutThreadPoolExecutor(thread.ThreadPoolExecutor):
             w = _WorkItem(f, fn, args, kwargs)
 
             self._work_queue.put(w)
+            with self._job_counter_lock:
+                self._job_counter += 1
             self._adjust_thread_count()
             return f
     submit.__doc__ = _base.Executor.submit.__doc__
 
     def _adjust_thread_count(self):
-        if time.monotonic() - self._thread_alive_check > 30:
-            to_remove = [t for t in self._threads if not t.is_alive()]
-            for t in to_remove:
-                _base.LOGGER.warning("Removing stale thread %r" % (t, ))
-                self._idle_semaphore.acquire(timeout=0)
-                self._threads.remove(t)
-                del _threads_queues[t]
-            self._thread_alive_check = time.monotonic()
-
-        # if idle threads are available, don't spin new threads
-        if self._idle_semaphore.acquire(timeout=0):
-            return
-
-        # When the executor gets lost, the weakref callback will wake up
-        # the worker threads.
-        def weakref_cb(_, q=self._work_queue):
-            q.put(None)
-
+        need_workers = False
         num_threads = len(self._threads)
-        if num_threads < self._max_workers:
+        if self._job_counter >= num_threads:
+            need_workers = True
+
+        if need_workers and num_threads < self._max_workers:
+            # When the executor gets lost, the weakref callback will wake up
+            # the worker threads.
+            def weakref_cb(_, q=self._work_queue):
+                q.put(None)
+
             thread_name = '%s_%d' % (self._thread_name_prefix or self,
                                      num_threads)
             t = threading.Thread(name=thread_name, target=_worker,
